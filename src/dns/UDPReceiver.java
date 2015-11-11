@@ -1,13 +1,10 @@
 package dns;
 
 import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
-import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
-import java.util.ArrayList;
+import java.net.InetSocketAddress;
 import java.util.HashMap;
-import java.util.List;
 
 /**
  * Cette classe permet la reception d'un paquet UDP sur le port de reception
@@ -75,6 +72,7 @@ public class UDPReceiver extends Thread {
 	
 	private boolean stop = false;
 
+        private static final int QR_MASK = 0b10000000;
 	
 	public UDPReceiver() {
 	}
@@ -122,7 +120,6 @@ public class UDPReceiver extends Thread {
 	public void run() {
 		try {
 			DatagramSocket serveur = new DatagramSocket(this.port); // *Creation d'un socket UDP
-		
 			
 			// *Boucle infinie de recpetion
 			while (!this.stop) {
@@ -132,28 +129,46 @@ public class UDPReceiver extends Thread {
 
 				// *Reception d'un paquet UDP via le socket
 				serveur.receive(paquetRecu);
-				
 				System.out.println("paquet recu du  "+paquetRecu.getAddress()+"  du port: "+ paquetRecu.getPort());
-				
 
 				// *Creation d'un DataInputStream ou ByteArrayInputStream pour
 				// manipuler les bytes du paquet
-
 				ByteArrayInputStream TabInputStream = new ByteArrayInputStream (paquetRecu.getData());
-				
 				System.out.println(buff.toString());
+                                
 				
-				// ****** Dans le cas d'un paquet requete *****
 
+                                int identifiant1 = TabInputStream.read();
+				int identifiant2 = TabInputStream.read();
+                                
+                                // ****** Dans le cas d'un paquet requete *****
+                                System.out.println("0 : " + identifiant1+identifiant2);
+                                System.out.println("1 : " + (TabInputStream.read() & QR_MASK));
+                                if((TabInputStream.read() & QR_MASK) == QR_MASK){
 					// *Lecture du Query Domain name, a partir du 13 byte
-
+                                        TabInputStream.skip(10);
+                                        int readCount = 6;
+                                        System.out.println("1");
+                                        while(readCount > 0){
+                                            DomainName += Character.toString((char)TabInputStream.read());
+                                            readCount--;
+                                        }
 					// *Sauvegarde du Query Domain name
-					
+					System.out.println(DomainName);
 					// *Sauvegarde de l'adresse, du port et de l'identifiant de la requete
-
+                                        ClientInfo clientInfo = new ClientInfo();
+                                        clientInfo.client_ip = paquetRecu.getAddress().toString().substring(1);
+                                        clientInfo.client_port = paquetRecu.getPort();
+                                        Clients.put(identifiant1, clientInfo);
+                                        
 					// *Si le mode est redirection seulement
+                                        if(RedirectionSeulement){
 						// *Rediriger le paquet vers le serveur DNS
-					// *Sinon
+                                            	DatagramSocket clientSocket = new DatagramSocket();
+						DatagramPacket packet = new DatagramPacket(buff, buff.length, new InetSocketAddress(SERVER_DNS, portRedirect) );
+						clientSocket.send(packet);
+						clientSocket.close();
+                                        } else {
 						// *Rechercher l'adresse IP associe au Query Domain name
 						// dans le fichier de correspondance de ce serveur					
 
@@ -163,8 +178,10 @@ public class UDPReceiver extends Thread {
 							// *Creer le paquet de reponse a l'aide du UDPAnswerPaquetCreator
 							// *Placer ce paquet dans le socket
 							// *Envoyer le paquet
+                                        }
 				
 				// ****** Dans le cas d'un paquet reponse *****
+                                } else {
 						// *Lecture du Query Domain name, a partir du 13 byte
 						
 						// *Passe par dessus Type et Class
@@ -183,6 +200,7 @@ public class UDPReceiver extends Thread {
 						// ayant emis une requete avec cet identifiant				
 						// *Placer ce paquet dans le socket
 						// *Envoyer le paquet
+                                }
 			}
 //			serveur.close(); //closing server
 		} catch (Exception e) {
