@@ -303,7 +303,7 @@ public class UDPReceiver extends Thread {
                     // *Envoyer le paquet
                     ClientInfo client = Clients.get(identifiant);
 
-                    serveur.send(new DatagramPacket(buff, buff.length, new InetSocketAddress(paquetRecu.getAddress(), paquetRecu.getPort())));
+                    serveur.send(new DatagramPacket(buff, buff.length, new InetSocketAddress(client.client_ip, client.client_port)));
                 }
             }
         } catch (Exception e) {
