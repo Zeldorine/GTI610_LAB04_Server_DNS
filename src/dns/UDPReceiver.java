@@ -47,7 +47,7 @@ public class UDPReceiver extends Thread {
      * ARCount : nombre d?entrees dans les champs ?Reponse?, Autorite,
      * Additionnel.
      */
-    protected final static int BUF_SIZE = 1024;
+    protected final static int BUF_SIZE = 2048;
     protected String SERVER_DNS = null;//serveur de redirection (ip)
     protected int portRedirect = 53; // port  de redirection (par defaut)
     protected int port; // port de r?ception
@@ -107,13 +107,14 @@ public class UDPReceiver extends Thread {
         DNSFile = filename;
     }
 
+    @Override
     public void run() {
         try {
             DatagramSocket serveur = new DatagramSocket(this.port); // *Creation d'un socket UDP
 
             // *Boucle infinie de recpetion
             while (!this.stop) {
-                byte[] buff = new byte[0xFF];
+                byte[] buff = new byte[0x1FF];
                 DatagramPacket paquetRecu = new DatagramPacket(buff, buff.length);
                 System.out.println("Serveur DNS  " + serveur.getLocalAddress() + "  en attente sur le port: " + serveur.getLocalPort());
 
@@ -121,55 +122,16 @@ public class UDPReceiver extends Thread {
                 serveur.receive(paquetRecu);
                 System.out.println("\n\npaquet recu du  " + paquetRecu.getAddress() + "  du port: " + paquetRecu.getPort());
 
-                // *Creation d'un DataInputStream ou ByteArrayInputStream pour
-                // manipuler les bytes du paquet
+                // *Creation d'un DataInputStream ou ByteArrayInputStream pour manipuler les bytes du paquet
                 ByteArrayInputStream TabInputStream = new ByteArrayInputStream(paquetRecu.getData());
 
-                int identifiant = 0;
-                int identifiant1 = TabInputStream.read();// 1read
-                if (identifiant1 != 0) {
-                    identifiant += identifiant1;
-                }
-                identifiant = identifiant << 8;
-                int identifiant2 = TabInputStream.read(); // 2read
-                if (identifiant2 != 0) {
-                    identifiant += identifiant2;
-                }
+                int identifiant = getIdentifiant(TabInputStream);
 
                 // ****** Dans le cas d'un paquet requete *****
-
-                //Verification bit a bit
-                //  if ((TabInputStream.read() & QR_MASK) == QR_MASK) { // 3 read
                 if (TabInputStream.read() == 1) { // 3 read
                     // *Lecture du Query Domain name, a partir du 13 byte
                     TabInputStream.skip(10);
-
-                    int nbByte = 0;
-                    DomainName = "";
-                    int tmpbyte = (char) TabInputStream.read();
-                    while (tmpbyte != 0) {
-                        //http://www.codeproject.com/Articles/46603/A-PicRS-control-with-a-PIC-microcontroller-seri
-                        //Transformer nimporte quelle caractere entre 0 - 46 en .
-                        // Octet 00 marque la fin donc tmpByte = 0
-                        //tmpbyte = (char)TabInputStream.read();
-                        if (tmpbyte != 0 && tmpbyte < 46) {
-                            tmpbyte = 46;
-                        }
-
-                        //convertir le char en string et construire le domain name
-                        if (tmpbyte != 0) {
-                            // *Sauvegarde du Query Domain name
-                            DomainName += Character.toString((char) tmpbyte);
-                        }
-                        nbByte++;
-                        tmpbyte = (char) TabInputStream.read();
-                    }
-
-                    //le champs est un multiple de 16, il faut donc s'assurer qu'on soit a la fin du champs.
-                    while (nbByte % 16 != 0) {
-                        TabInputStream.read();
-                        nbByte++;
-                    }
+                    initQueryDomainName(TabInputStream);
 
                     // *Sauvegarde de l'adresse, du port et de l'identifiant de la requete
                     ClientInfo clientInfo = new ClientInfo();
@@ -180,15 +142,11 @@ public class UDPReceiver extends Thread {
                     // *Si le mode est redirection seulement
                     if (RedirectionSeulement) {
                         // *Rediriger le paquet vers le serveur DNS
-                        // DatagramSocket clientSocket = new DatagramSocket();
                         DatagramPacket packet = new DatagramPacket(buff, buff.length, new InetSocketAddress(SERVER_DNS, portRedirect));
-                        // clientSocket.send(packet);
-                        //clientSocket.close();
                         serveur.send(packet);
                     } else {
-                        // *Rechercher l'adresse IP associe au Query Domain name
-                        // dans le fichier de correspondance de ce serveur					
-                        List<String> ipFound = new ArrayList<String>();
+                        // *Rechercher l'adresse IP associe au Query Domain name dans le fichier de correspondance de ce serveur					
+                        List<String> ipFound = new ArrayList<>();
                         if (DNSFile != null) {
                             QueryFinder queryFinder = new QueryFinder(DNSFile);
                             ipFound = queryFinder.StartResearch(DomainName);
@@ -197,18 +155,15 @@ public class UDPReceiver extends Thread {
                         // *Si la correspondance n'est pas trouvee
                         if (ipFound.isEmpty()) {
                             // *Rediriger le paquet vers le serveur DNS
-                            //DatagramSocket clientSocket = new DatagramSocket();
                             DatagramPacket packet = new DatagramPacket(buff, buff.length, new InetSocketAddress(SERVER_DNS, portRedirect));
                             serveur.send(packet);
-                            // serveur.close();
                         } else {
-                            // *Sinon	
                             // *Creer le paquet de reponse a l'aide du UDPAnswerPaquetCreator
                             byte[] paquetReponse = UDPAnswerPacketCreator.getInstance().CreateAnswerPacket(buff, ipFound);
                             ClientInfo client = Clients.get(identifiant);
                             DatagramPacket packet = new DatagramPacket(paquetReponse, paquetReponse.length, new InetSocketAddress(client.client_ip, client.client_port));
-                            // *Placer ce paquet dans le socket
-                            // *Envoyer le paquet
+
+                            // *Placer ce paquet dans le socket et Envoyer le paquet
                             serveur.send(packet);
                         }
                     }
@@ -217,98 +172,135 @@ public class UDPReceiver extends Thread {
                 } else {
                     // recuperer la valeur de ANCount
                     TabInputStream.skip(3);
-                    int ANCount = 0;
-
-                    int tmpByte = TabInputStream.read();// 7read
-                    if (tmpByte != 0) {
-                        ANCount += tmpByte;
-                    }
-                    ANCount = ANCount << 8;
-                    tmpByte = TabInputStream.read();// 8read
-                    if (tmpByte != 0) {
-                        ANCount += tmpByte;
-                    }
+                    int ANCount = getANCount(TabInputStream);
 
                     // *Lecture du Query Domain name, a partir du 13 byte
-                    int nbByte = 0;
-                    int tmpbyte;
                     TabInputStream.skip(5);
+                    initQueryDomainName(TabInputStream);
 
-                    DomainName = "";
-
-                    tmpbyte = (char) TabInputStream.read();//13 read
-                    while (tmpbyte != 0) {
-                        //http://www.codeproject.com/Articles/46603/A-PicRS-control-with-a-PIC-microcontroller-seri
-                        //Transformer nimporte quelle caractere entre 0 - 46 en .
-                        // Octet 00 marque la fin donc tmpByte = 0
-                        //tmpbyte = (char)TabInputStream.read();
-                        if (tmpbyte != 0 && tmpbyte < 46) {
-                            tmpbyte = 46;
-                        }
-
-                        //convertir le char en string et construire le domain name
-                        if (tmpbyte != 0) {
-                            // *Sauvegarde du Query Domain name
-                            DomainName += Character.toString((char) tmpbyte);
-                        }
-                        nbByte++;
-                        tmpbyte = (char) TabInputStream.read();
-                    }
-
-                    //le champs est un multiple de 16, il faut donc s'assurer qu'on soit a la fin du champs.
-                   /* while (nbByte % 16 != 0) {
-                        TabInputStream.read();
-                        nbByte++;
-                    }*/
-
-                    System.out.println("DomainName = " + DomainName);
-                    System.out.println("ANCount = " + ANCount);
                     // *Passe par dessus Type et Class
                     TabInputStream.skip(4);
 
                     // *Passe par dessus les premiers champs du ressource record
-                    // pour arriver au ressource data qui contient l'adresse IP associe
-                    //  au hostname (dans le fond saut de 16 bytes)
-                    TabInputStream.skip(12);
+                    // pour arriver au ressource data qui contient l'adresse IP associe au hostname (dans le fond saut de 16 bytes)
+                    TabInputStream.skip(11);
 
-                    String[] ipAddresses = new String[ANCount];
-                    // *Capture de ou des adresse(s) IP (ANCOUNT est le nombre
-                    // de r?ponses retourn?es)	
+                    List<String> ipAddresses = getIpReponses(TabInputStream, ANCount);
 
-                    int nbIp = 0;
-
-                    while (nbIp < ANCount) {
-                        // 4 octect pour une adresse IPV4
-                        ipAddresses[nbIp] = "";
-                        for (int i = 0; i < 4; i++) {
-                            ipAddresses[nbIp] += Integer.toString(TabInputStream.read());
-                            if(i<3){
-                            ipAddresses[nbIp] += ".";
-                            }
-                        }
-
-                        nbIp++;
-                    }
-
-                        // *Ajouter la ou les correspondance(s) dans le fichier DNS
-                    // si elles ne y sont pas deja
+                    // *Capture de ou des adresse(s) IP (ANCOUNT est le nombre de r?ponses retourn?es)	
+                    // *Ajouter la ou les correspondance(s) dans le fichier DNS si elles ne y sont pas deja
                     AnswerRecorder answer = new AnswerRecorder(DNSFile);
-                    for (String ip : ipAddresses) {
-                        answer.StartRecord(DomainName, ip);
-                    }
+                    ipAddresses.stream().forEach((ip) -> {
+                        answer.StartRecord(DomainName, ip); // TODO ne pas ecrire les doubles
+                    });
 
-                    // *Faire parvenir le paquet reponse au demandeur original,
-                    // ayant emis une requete avec cet identifiant				
-                    // *Placer ce paquet dans le socket
-                    // *Envoyer le paquet
+                    // *Faire parvenir le paquet reponse au demandeur original, ayant emis une requete avec cet identifiant				
+                    // *Placer ce paquet dans le socket et Envoyer le paquet
                     ClientInfo client = Clients.get(identifiant);
+                    byte[] paquetReponse = UDPAnswerPacketCreator.getInstance().CreateAnswerPacket(buff, ipAddresses);
 
-                    serveur.send(new DatagramPacket(buff, buff.length, new InetSocketAddress(client.client_ip, client.client_port)));
+                    if (paquetReponse != null && checkClientInfoNotNUll(client)) {
+                        serveur.send(new DatagramPacket(paquetReponse, paquetReponse.length, new InetSocketAddress(client.client_ip, client.client_port)));
+                    }
                 }
             }
         } catch (Exception e) {
             System.err.println("Probl?me ? l'ex?cution :");
             e.printStackTrace(System.err);
         }
+    }
+
+    private boolean checkClientInfoNotNUll(ClientInfo client) {
+        return client != null && client.client_ip != null && client.client_port > 0;
+    }
+
+    private int getIdentifiant(ByteArrayInputStream TabInputStream) {
+        int identifiant = 0;
+
+        int identifiant1 = TabInputStream.read();// 1read
+        if (identifiant1 != 0) {
+            identifiant += identifiant1;
+        }
+
+        identifiant = identifiant << 8;
+
+        int identifiant2 = TabInputStream.read(); // 2read
+        if (identifiant2 != 0) {
+            identifiant += identifiant2;
+        }
+
+        return identifiant;
+    }
+
+    private int getANCount(ByteArrayInputStream TabInputStream) {
+        int ANCount = 0;
+
+        int tmpByte = TabInputStream.read();// 7read
+        if (tmpByte != 0) {
+            ANCount += tmpByte;
+        }
+        ANCount = ANCount << 8;
+        tmpByte = TabInputStream.read();// 8read
+        if (tmpByte != 0) {
+            ANCount += tmpByte;
+        }
+
+        return ANCount;
+    }
+
+    private void initQueryDomainName(ByteArrayInputStream TabInputStream) {
+        DomainName = "";
+        int tmpbyte;
+
+        tmpbyte = (char) TabInputStream.read();//13 read
+        while (tmpbyte != 0) {
+            //http://www.codeproject.com/Articles/46603/A-PicRS-control-with-a-PIC-microcontroller-seri
+            //Transformer nimporte quelle caractere entre 0 - 46 en .
+            // Octet 00 marque la fin donc tmpByte = 0
+            //tmpbyte = (char)TabInputStream.read();
+            if (tmpbyte != 0 && tmpbyte < 46) {
+                tmpbyte = 46;
+            }
+
+            //convertir le char en string et construire le domain name
+            if (tmpbyte != 0) {
+                // *Sauvegarde du Query Domain name
+                DomainName += Character.toString((char) tmpbyte);
+            }
+            tmpbyte = (char) TabInputStream.read();
+        }
+    }
+
+    private List<String> getIpReponses(ByteArrayInputStream TabInputStream, int ANCount) {
+        String[] tmpIpAddresses = new String[ANCount];
+        List<String> ipAddresses = new ArrayList<>();
+        int nbIp = 0;
+        int index = 0;
+
+        while (nbIp < ANCount) {
+            // 4 octect pour une adresse IPV4
+            int rdLength = TabInputStream.read();
+            if (rdLength == 4) { // TODO and type A
+                tmpIpAddresses[index] = "";
+                for (int i = 0; i < 4; i++) {
+                    tmpIpAddresses[index] += Integer.toString(TabInputStream.read());
+                    if (i < 3) {
+                        tmpIpAddresses[index] += ".";
+                    }
+                }
+                index++;
+                TabInputStream.skip(11);
+            } else {
+                TabInputStream.skip(11 + rdLength);
+            }
+            nbIp++;
+        }
+
+        // Supprimer les string null s'il y en a
+        for (int i = 0; i < index; i++) {
+            ipAddresses.add(tmpIpAddresses[i]);
+        }
+        
+        return ipAddresses;
     }
 }
