@@ -49,7 +49,7 @@ public class UDPReceiver extends Thread {
     protected String SERVER_DNS = null;//serveur de redirection (ip)
     protected int portRedirect = 53; // port  de redirection (par defaut)
     protected int port; // port de r?ception
-    private String adrIP = null; //bind ip d'ecoute
+    private final String adrIP = null; //bind ip d'ecoute
     private String DomainName = "none";
     private String DNSFile = null;
     private boolean RedirectionSeulement = false;
@@ -59,9 +59,9 @@ public class UDPReceiver extends Thread {
         public String client_ip = null;
         public int client_port = 0;
     };
-    private HashMap<Integer, ClientInfo> Clients = new HashMap<>();
+    private final HashMap<Integer, ClientInfo> Clients = new HashMap<>();
 
-    private boolean stop = false;
+    private final boolean stop = false;
 
     private static final int QR_MASK = 0b10000000;
 
@@ -87,10 +87,6 @@ public class UDPReceiver extends Thread {
 
     public String getAdrIP() {
         return adrIP;
-    }
-
-    private void setAdrIP(String ip) {
-        adrIP = ip;
     }
 
     public String getSERVER_DNS() {
@@ -188,8 +184,11 @@ public class UDPReceiver extends Thread {
                     // *Capture de ou des adresse(s) IP (ANCOUNT est le nombre de r?ponses retourn?es)	
                     // *Ajouter la ou les correspondance(s) dans le fichier DNS si elles ne y sont pas deja
                     AnswerRecorder answer = new AnswerRecorder(DNSFile);
+
                     ipAddresses.stream().forEach((ip) -> {
-                        answer.StartRecord(DomainName, ip); // TODO ne pas ecrire les doubles
+                        if (enregistrerIp(ip)) {
+                            answer.StartRecord(DomainName, ip);
+                        }
                     });
 
                     // *Faire parvenir le paquet reponse au demandeur original, ayant emis une requete avec cet identifiant				
@@ -206,6 +205,13 @@ public class UDPReceiver extends Thread {
             System.err.println("Probl?me ? l'ex?cution :");
             e.printStackTrace(System.err);
         }
+    }
+
+    private boolean enregistrerIp(String ip) {
+        QueryFinder queryFinder = new QueryFinder(DNSFile);
+        List<String> ipFound = queryFinder.StartResearch(DomainName);
+        
+        return !ipFound.contains(ip);
     }
 
     private boolean checkClientInfoNotNUll(ClientInfo client) {
@@ -277,7 +283,7 @@ public class UDPReceiver extends Thread {
         while (nbIp < ANCount) {
             // 4 octect pour une adresse IPV4
             int rdLength = TabInputStream.read();
-            if (rdLength == 4) { // TODO and type A
+            if (rdLength == 4) {
                 tmpIpAddresses[index] = "";
                 for (int i = 0; i < 4; i++) {
                     tmpIpAddresses[index] += Integer.toString(TabInputStream.read());
