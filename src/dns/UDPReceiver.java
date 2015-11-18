@@ -4,9 +4,7 @@ import java.io.ByteArrayInputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 
@@ -128,7 +126,7 @@ public class UDPReceiver extends Thread {
                 int identifiant = getIdentifiant(TabInputStream);
 
                 // ****** Dans le cas d'un paquet requete *****
-                if (TabInputStream.read() == 1) { // 3 read
+                if (TabInputStream.read() == 1) {
                     // *Lecture du Query Domain name, a partir du 13 byte
                     TabInputStream.skip(10);
                     initQueryDomainName(TabInputStream);
@@ -217,14 +215,14 @@ public class UDPReceiver extends Thread {
     private int getIdentifiant(ByteArrayInputStream TabInputStream) {
         int identifiant = 0;
 
-        int identifiant1 = TabInputStream.read();// 1read
+        int identifiant1 = TabInputStream.read();
         if (identifiant1 != 0) {
             identifiant += identifiant1;
         }
 
         identifiant = identifiant << 8;
 
-        int identifiant2 = TabInputStream.read(); // 2read
+        int identifiant2 = TabInputStream.read();
         if (identifiant2 != 0) {
             identifiant += identifiant2;
         }
@@ -235,12 +233,12 @@ public class UDPReceiver extends Thread {
     private int getANCount(ByteArrayInputStream TabInputStream) {
         int ANCount = 0;
 
-        int tmpByte = TabInputStream.read();// 7read
+        int tmpByte = TabInputStream.read();
         if (tmpByte != 0) {
             ANCount += tmpByte;
         }
         ANCount = ANCount << 8;
-        tmpByte = TabInputStream.read();// 8read
+        tmpByte = TabInputStream.read();
         if (tmpByte != 0) {
             ANCount += tmpByte;
         }
@@ -249,26 +247,25 @@ public class UDPReceiver extends Thread {
     }
 
     private void initQueryDomainName(ByteArrayInputStream TabInputStream) {
+        int tmpbyte = (char) TabInputStream.read();
+        StringBuilder stringBUilder = new StringBuilder();
         DomainName = "";
-        int tmpbyte;
 
-        tmpbyte = (char) TabInputStream.read();//13 read
         while (tmpbyte != 0) {
             //http://www.codeproject.com/Articles/46603/A-PicRS-control-with-a-PIC-microcontroller-seri
-            //Transformer nimporte quelle caractere entre 0 - 46 en .
-            // Octet 00 marque la fin donc tmpByte = 0
-            //tmpbyte = (char)TabInputStream.read();
+            //Transformer nimporte quelle caractere entre 0 - 46 en '.'. Octet 00 marque la fin donc tmpByte = 0
             if (tmpbyte != 0 && tmpbyte < 46) {
                 tmpbyte = 46;
             }
 
-            //convertir le char en string et construire le domain name
             if (tmpbyte != 0) {
-                // *Sauvegarde du Query Domain name
-                DomainName += Character.toString((char) tmpbyte);
+                stringBUilder.append(Character.toString((char) tmpbyte));
             }
+
             tmpbyte = (char) TabInputStream.read();
         }
+
+        DomainName = stringBUilder.toString();
     }
 
     private List<String> getIpReponses(ByteArrayInputStream TabInputStream, int ANCount) {
@@ -300,7 +297,7 @@ public class UDPReceiver extends Thread {
         for (int i = 0; i < index; i++) {
             ipAddresses.add(tmpIpAddresses[i]);
         }
-        
+
         return ipAddresses;
     }
 }
